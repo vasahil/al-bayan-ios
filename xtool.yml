@@ -1,0 +1,6 @@
+version: 1
+bundleID: com.appstudio.AlBayanApp
+infoPath: AlBayanApp/Resources/Info.plist
+iconPath: AlBayanApp/Resources/AppIcon.png
+resources:
+  - AlBayanApp/Resources/GoogleService-Info.plist

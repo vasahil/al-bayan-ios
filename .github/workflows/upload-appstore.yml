@@ -1,0 +1,28 @@
+name: Upload to App Store Connect
+
+on:
+  workflow_dispatch: # Allows you to trigger the upload with 1 click from GitHub Actions tab
+
+jobs:
+  upload:
+    name: Deliver IPA to App Store Connect
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check IPA File
+        run: |
+          ls -lh xtool/AlBayanApp.ipa
+
+      - name: Upload to App Store Connect
+        env:
+          APPLE_USERNAME: ${{ secrets.APPLE_USERNAME }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun altool --upload-app \
+            -f xtool/AlBayanApp.ipa \
+            -t ios \
+            -u "$APPLE_USERNAME" \
+            -p "$APPLE_APP_SPECIFIC_PASSWORD"

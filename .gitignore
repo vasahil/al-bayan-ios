@@ -1,0 +1,12 @@
+# Swift & xtool build artifacts
+.build/
+.bsp/
+xtool/.xtool-tmp/
+xtool/*.app/
+
+# Keep the signed production IPA for upload
+!xtool/AlBayanApp.ipa
+
+# OS files
+.DS_Store
+Thumbs.db
