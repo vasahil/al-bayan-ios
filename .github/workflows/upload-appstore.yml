@@ -1,20 +1,75 @@
 name: Upload to App Store Connect
 
 on:
-  workflow_dispatch: # Allows you to trigger the upload with 1 click from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   upload:
-    name: Deliver IPA to App Store Connect
+    name: Codesign and Deliver IPA to App Store Connect
     runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Check IPA File
+      - name: Install Apple Certificate and Provisioning Profile
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
         run: |
-          ls -lh xtool/AlBayanApp.ipa
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/embedded.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 12)
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Codesign IPA for App Store
+        env:
+          CERTIFICATE_NAME: ${{ secrets.CERTIFICATE_NAME }}
+        run: |
+          set -e
+          echo "Extracting IPA..."
+          rm -rf app_payload AlBayanApp-AppStore.ipa
+          unzip -q xtool/AlBayanApp.ipa -d app_payload
+
+          APP_PATH="app_payload/Payload/AlBayanApp.app"
+
+          echo "Injecting embedded.mobileprovision..."
+          cp "$RUNNER_TEMP/embedded.mobileprovision" "$APP_PATH/embedded.mobileprovision"
+
+          echo "Extracting entitlements from mobileprovision..."
+          security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$RUNNER_TEMP/profile.plist" > "$RUNNER_TEMP/entitlements.plist"
+
+          echo "Signing application binary and bundle..."
+          /usr/bin/codesign --force --sign "$CERTIFICATE_NAME" \
+            --entitlements "$RUNNER_TEMP/entitlements.plist" \
+            --timestamp \
+            --generate-entitlement-der \
+            "$APP_PATH"
+
+          echo "Verifying code signature..."
+          /usr/bin/codesign --verify --verbose=2 "$APP_PATH"
+
+          echo "Repackaging into production IPA..."
+          cd app_payload
+          zip -qr ../AlBayanApp-AppStore.ipa Payload
+          cd ..
+          ls -lh AlBayanApp-AppStore.ipa
 
       - name: Setup App Store Connect API Key
         env:
@@ -30,8 +85,7 @@ jobs:
           API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           xcrun altool --upload-app \
-            -f xtool/AlBayanApp.ipa \
+            -f AlBayanApp-AppStore.ipa \
             -t ios \
             --apiKey "$API_KEY_ID" \
             --apiIssuer "$API_ISSUER_ID"
-
