@@ -47,9 +47,44 @@ jobs:
           unzip -q xtool/AlBayanApp.ipa -d app_payload
 
           APP_PATH="app_payload/Payload/AlBayanApp.app"
+          PLIST="$APP_PATH/Info.plist"
+          BINARY="$APP_PATH/AlBayanApp"
 
           echo "Injecting embedded.mobileprovision..."
           cp "$RUNNER_TEMP/embedded.mobileprovision" "$APP_PATH/embedded.mobileprovision"
+
+          echo "Detecting Xcode and iOS SDK details on runner..."
+          SDK_VERSION=$(xcrun --show-sdk-version --sdk iphoneos)
+          SDK_BUILD=$(xcrun --show-sdk-build-version --sdk iphoneos)
+          XCODE_BUILD=$(xcodebuild -version | grep "Build version" | awk '{print $3}')
+          XCODE_VERSION_RAW=$(xcodebuild -version | head -n 1 | awk '{print $2}')
+          MAJOR=$(echo "$XCODE_VERSION_RAW" | cut -d. -f1)
+          MINOR=$(echo "$XCODE_VERSION_RAW" | cut -d. -f2)
+          XCODE_VERSION=$(printf "%02d%d0" "$MAJOR" "$MINOR")
+          OS_BUILD=$(sw_vers -buildVersion 2>/dev/null || echo "23F79")
+
+          echo "SDK_VERSION: $SDK_VERSION"
+          echo "SDK_BUILD: $SDK_BUILD"
+          echo "XCODE_VERSION: $XCODE_VERSION"
+          echo "XCODE_BUILD: $XCODE_BUILD"
+
+          echo "Injecting Apple App Store required Xcode metadata into Info.plist..."
+          /usr/libexec/PlistBuddy -c "Add :DTPlatformName string iphoneos" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTPlatformName iphoneos" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTPlatformVersion string $SDK_VERSION" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTPlatformVersion $SDK_VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTSDKName string iphoneos$SDK_VERSION" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTSDKName iphoneos$SDK_VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTSDKBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTSDKBuild $SDK_BUILD" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTPlatformBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTPlatformBuild $SDK_BUILD" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTXcode string $XCODE_VERSION" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTXcode $XCODE_VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTXcodeBuild string $XCODE_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTXcodeBuild $XCODE_BUILD" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTCompiler com.apple.compilers.llvm.clang.1_0" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :BuildMachineOSBuild string $OS_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :BuildMachineOSBuild $OS_BUILD" "$PLIST"
+
+          echo "Updating Mach-O build version with vtool..."
+          if xcrun --find vtool >/dev/null 2>&1; then
+            xcrun vtool -show "$BINARY" || true
+            xcrun vtool -set-build-version 2 16.0 "$SDK_VERSION" -replace -output "$BINARY" "$BINARY" || true
+            xcrun vtool -show "$BINARY" || true
+          fi
 
           echo "Extracting entitlements from mobileprovision..."
           security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/profile.plist"
