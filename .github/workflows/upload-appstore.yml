@@ -79,6 +79,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :DTCompiler com.apple.compilers.llvm.clang.1_0" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :BuildMachineOSBuild string $OS_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :BuildMachineOSBuild $OS_BUILD" "$PLIST"
 
+          echo "Compiling Asset Catalog (Assets.car)..."
+          xcrun actool AlBayanApp/Resources/Assets.xcassets \
+            --compile "$APP_PATH" \
+            --platform iphoneos \
+            --minimum-deployment-target 16.0 \
+            --app-icon AppIcon \
+            --output-partial-info-plist "$RUNNER_TEMP/asset_info.plist" || true
+
+          echo "Copying fallback icon PNGs directly into app bundle..."
+          cp AlBayanApp/Resources/AppIcon*.png "$APP_PATH/" || true
+          cp AlBayanApp/Resources/Assets.xcassets/AppIcon.appiconset/*.png "$APP_PATH/" || true
+
+          echo "Ensuring CFBundleIconName and CFBundleIcons in Info.plist..."
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$PLIST"
+
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles:0 string AppIcon60x60" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName string AppIcon" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName AppIcon" "$PLIST"
+
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles:0 string AppIcon60x60" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles:1 string AppIcon76x76" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles:2 string AppIcon83.5x83.5" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconName string AppIcon" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconName AppIcon" "$PLIST"
+
           echo "Updating Mach-O build version with vtool..."
           if xcrun --find vtool >/dev/null 2>&1; then
             xcrun vtool -show "$BINARY" || true
